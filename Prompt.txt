@@ -1,0 +1,33 @@
+🛠️ Aufgabe:
+Überarbeite den vollständigen Quellcode einer Datei mit den folgenden Prinzipien und Qualitätsstandards. Es geht dabei **nicht** um die Rückgabe einzelner Snippets, sondern um **die Gesamtheit der Datei in ihrer funktionalen Integrität**.
+
+📜 Grundregeln (verbindlich):
+
+1. 🔁 **Erhalte den gesamten ursprünglichen Quellcode**. Füge Änderungen direkt in den Originalkontext ein, **ohne** Funktionalität zu verlieren oder Blöcke zu löschen.
+2. ✨ **Implementiere neue oder verbesserte Funktionen inline**, aber so, dass **nichts zerschossen wird** (keine versehentliche Überschreibung oder unvollständige Rückgabe).
+3. 🧱 **Gib mir den vollständigen Code als komplette, konsistente Datei zurück** – **nicht** nur Codeausschnitte oder „nur die Änderungen“. Ich möchte ihn direkt speichern und weiterverwenden können.
+4. 🧩 Wenn der gesamte Code nicht in einem Schritt dargestellt werden kann:
+   - Teile ihn **systematisch** auf in `<!-- Teil 1/3 -->`, `<!-- Teil 2/3 -->` usw.
+   - Achte darauf, **alle Blöcke vollständig und zusammenhängend** zu liefern.
+   - Markiere den **Beginn und das Ende jedes Teils**, z. B. mit `<!-- Anfang Teil 1 -->` und `<!-- Ende Teil 1 -->`.
+5. 🧪 Testbarkeit: Stelle sicher, dass der überarbeitete Code **syntaktisch korrekt und funktional testbar** ist.
+6. ⚠️ Bei Unsicherheiten (z. B. ob eine Logik entfernt oder ersetzt werden darf):  
+   - Kommentiere die betreffende Zeile mit `// TODO: Überprüfen – ursprünglicher Code:`  
+   - Oder nutze HTML-Kommentare wie `<!-- TODO: Gemini prüfen – ursprünglicher Abschnitt -->`
+
+📦 Kontext:
+Die Datei enthält möglicherweise HTML, CSS, JS oder ein Framework (z. B. Vue, React, Tailwind etc.). Sei bei Einfügungen **stilistisch konsistent**. Wenn du neue Blöcke einfügst, halte dich an die bisherige Formatierung und Namenskonventionen.
+
+🎯 Ziel:
+Ein stabiler, durchgängiger und lesbarer Code, der sowohl für Live-Umgebung als auch für kontinuierliche Weiterentwicklung geeignet ist. Alle geplanten Änderungen sollen **automatisch an der richtigen Stelle** eingefügt werden.
+
+📚 Dokumentiere auf Wunsch alle Änderungen mit Inline-Kommentaren oder Änderungsprotokoll.
+
+⚙️ Du darfst zusätzliche `<script>`- oder `<style>`-Elemente hinzufügen, jedoch **niemals bestehende Logik durch Platzgründe oder Tokens einschränken**.
+
+📣 Rückgabeformat:
+```html
+<!-- Teil 1/3 -->
+<!DOCTYPE html>
+<html lang="de">
+<head> ...

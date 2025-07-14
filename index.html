@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IHK Quest – Dein Lernabenteuer</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        #pruefungPlusScreen.active {
+            display: block !important;
+        }
+    </style>
+
+    <style>
+        .code-result-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .code-result-call {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f9f9f9;
+        }
+        .code-result-call h4 {
+            margin-top: 0;
+            color: #333;
+        }
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        .param-table th, .param-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .param-table th {
+            background-color: #f2f2f2;
+            font-weight: 600;
+        }
+        .code-result-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .code-result-row label {
+            font-weight: 500;
+        }
+        .code-result-row input {
+            flex-grow: 1;
+        }
+
+        /* KORREKTUR: Neue Stile für Syntax-Hervorhebung */
+        pre.code-snippet {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .code-keyword { color: #ff79c6; font-weight: bold; }
+        .code-variable { color: #8be9fd; }
+        .code-operator { color: #f1fa8c; }
+        .code-function-name { color: #50fa7b; }
+        .code-params { color: #ffb86c; }
+
+    </style>
+</head>
+<body>
+    <div class="phone-container">
+
+        <div class="skillforge-header">
+            <div class="header-logo">
+                <img src="data/skillforge_brand.png" alt="SkillForge Logo" />
+            </div>
+
+            <div class="header-user-area">
+                <div class="user-info">
+                    <div class="user-avatar">M</div>
+                    <div class="user-details">
+                        <div class="user-name">Max</div>
+                        <div class="user-level-progress">
+                            <div class="level-label" id="userLevel">Level 1</div>
+                            <div class="xp-bar">
+                                <div class="xp-fill" id="levelXpFill" style="width: 30%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="resources">
+                    <div class="resource-item"><span class="coin-icon">🪙</span><span id="coinCount">0</span></div>
+                    <div class="resource-item"><span class="heart-icon">❤️</span><span id="heartCount">0</span></div>
+                    <div class="resource-item"><span class="gem-icon">💎</span><span id="gemCount">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="learning-path active" id="mapScreen"></div>
+        <div class="screen" id="boardScreen"><h2>Board (in Arbeit)</h2></div>
+        <div class="screen" id="shopScreen"></div>
+        <div class="screen" id="profileScreen"></div>
+
+        <div class="screen" id="pruefungPlusScreen">
+            </div>
+
+        <div class="bottom-nav">
+            <div class="nav-item active" data-screen="mapScreen"><div class="nav-icon">📚</div><div class="nav-label">Lernpfad</div></div>
+            <div class="nav-item" data-screen="boardScreen"><div class="nav-icon">📋</div><div class="nav-label">Board</div></div>
+            <div class="nav-item" data-screen="shopScreen"><div class="nav-icon">🛒</div><div class="nav-label">Shop</div></div>
+            <div class="nav-item" data-screen="profileScreen"><div class="nav-icon">👤</div><div class="nav-label">Profil</div></div>
+            <div class="nav-item" data-screen="pruefungPlusScreen"><div class="nav-icon">🎓</div><div class="nav-label">Prüfung+</div></div>
+        </div>
+
+        <div class="modal main-lern-modal" id="lernModal">
+            <div class="modal-content lern-container">
+                <div class="lern-header">
+                    <h2 id="lernModalTitle">Lernen</h2>
+                    <span class="close-button" id="closeLernBtn">&times;</span>
+                </div>
+                <div class="lern-nav">
+                    <button class="lern-nav-btn active" data-tab="lernenTab">1. Lernen</button>
+                    <button class="lern-nav-btn" data-tab="anwendenTab">2. Anwenden</button>
+                    <button class="lern-nav-btn" data-tab="prüfenTab">3. Prüfen</button>
+                </div>
+                <div class="lern-content">
+                    <div class="lern-tab active" id="lernenTab">
+                        <h3>Beschreibung</h3>
+                        <p id="lernenBeschreibung"></p>
+                    </div>
+                    <div class="lern-tab" id="anwendenTab">
+                        <h3>Simulation</h3>
+                        <p id="anwendenAnleitung"></p>
+                        <div id="simulationInput" class="simulation-input"></div>
+                        <button id="simulierenBtn" class="quiz-btn primary">Simulieren</button>
+                        <div id="simulationOutput" class="simulation-output"></div>
+                    </div>
+                    <div class="lern-tab" id="prüfenTab">
+                        <h3>Wissenstest</h3>
+                        <p>Bist du bereit, dein Wissen zu testen?</p>
+                        <button id="startQuizBtn" class="quiz-btn primary">Quiz starten</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal zusatz-modal" id="zusatzModulModal">
+            <div class="modal-content zusatz-container">
+                <div class="lern-header">
+                    <h2 id="zusatzModulTitle">Interaktives Modul</h2>
+                    <span class="close-button" id="closeZusatzModulBtn">&times;</span>
+                </div>
+                <div class="zusatz-modul-content" id="zusatzModulContent"></div>
+            </div>
+        </div>
+
+        <div class="modal quiz-modal" id="quizModal">
+            <div class="quiz-container">
+                <div class="quiz-header">
+                    <div class="close-quiz" id="closeQuizBtn">&times;</div>
+                    <div class="quiz-progress"><div class="progress-bar"><div id="progressFill" class="progress-fill" style="width:0"></div></div></div>
+                    <div class="quiz-score">⭐ <span id="quizScore">0</span></div>
+                </div>
+                <div class="question-container">
+                    <div id="questionNumber" class="question-number"></div>
+                    <div id="questionText" class="question-text"></div>
+                    <div id="answerOptions" class="answer-options"></div>
+                </div>
+                <div id="explanationBox" class="explanation-box"><div id="explanationText"></div></div>
+                <div class="quiz-navigation">
+                    <button id="prevBtn" class="quiz-btn secondary" style="display: none;">Zurück</button>
+                    <button id="nextBtn" class="quiz-btn primary">Weiter</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal quiz-modal" id="resultsModal">
+            <div class="quiz-container results-container">
+                <div id="resultEmoji" class="result-animation">🎉</div>
+                <h2 id="resultTitle" class="result-title">Geschafft!</h2>
+                <div class="result-score" id="finalScore">0/0</div>
+                <div class="reward-container">
+                    <div class="reward-title">Deine Belohnungen:</div>
+                    <div class="rewards">
+                        <div class="reward-item"><div class="reward-icon">🪙</div><div id="coinsEarned" class="reward-amount"></div><div class="reward-label">Münzen</div></div>
+                        <div class="reward-item"><div class="reward-icon">⭐</div><div id="starsEarned" class="reward-amount"></div><div class="reward-label">Sterne</div></div>
+                        <div class="reward-item"><div class="reward-icon">🎯</div><div id="xpEarned" class="reward-amount"></div><div class="reward-label">XP</div></div>
+                    </div>
+                </div>
+                <div class="quiz-navigation">
+                    <button id="reviewAnswersBtn" class="quiz-btn secondary">Antworten prüfen</button>
+                    <button id="backToMapBtn" class="quiz-btn primary">Weiter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="definitions.js" defer></script>
+    <script type="module" src="data/lernfelder.js" defer></script>
+    <script type="module" src="data/wissensgraph.js" defer></script>
+    <script type="module" src="data/zusatzmodule.js" defer></script>
+    <script type="module" src="services/lernlogik.service.js" defer></script>
+    <script type="module" src="shopItems.js" defer></script>
+    <script type="module" src="quizLogic.js" defer></script>
+    <script type="module" src="zusatzModuleLogic.js" defer></script>
+    <script type="module" src="uiLogic.js" defer></script>
+    <script type="module" src="main.js" defer></script>
+  </body>
+</html>
