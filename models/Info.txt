@@ -1,8 +1,0 @@
-Die Dateien wissensbaustein.model.js und szenario.model.js enthalten noch keinerlei konkrete Fragen oder Inhalte. Sie definieren nur, wie ein Wissensbaustein oder ein Szenario in Zukunft aufgebaut sein muss (z. B. "ein Wissensbaustein MUSS einen Titel haben", "er KANN Abhängigkeiten haben" etc.).
-
-Stell es dir wie den Bauplan für ein Haus vor: Wir haben jetzt die Pläne für die Räume "Wissensbaustein" und "Szenario" gezeichnet. Jetzt wissen wir, wo die Türen und Fenster hingehören. Im nächsten Schritt fangen wir an, die Möbel (also die Inhalte) hineinzustellen.
-
-Was wir bisher getan haben (Die "Baupläne" 🏗️)
-wissensbaustein.model.js: Definiert die leere Vorlage für eine atomare Lerneinheit.
-
-szenario.model.js: Definiert die leere Vorlage für eine komplexe, handlungsorientierte Fallstudie.
