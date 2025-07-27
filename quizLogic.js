@@ -7,18 +7,15 @@ window.activeQuiz = {};
 
 /**
  * =====================================================================================
- * KORRIGIERTE FUNKTION: startQuiz
+ * FUNKTION: startQuiz (Version 3.0)
  * =====================================================================================
- * Behobene Probleme:
- * 1. Der sofortige Herzabzug wurde entfernt. Das Herz wird jetzt erst bei Bestätigung
- * der ersten Frage in `nextQuestion` abgezogen.
- * 2. Die Benachrichtigung über den Herzverlust wurde ebenfalls nach `nextQuestion`
- * verschoben, um den Nutzer nur dann zu informieren, wenn die Aktion irreversibel ist.
+ * Logik: Bereitet das Quiz vor, ohne Ressourcen abzuziehen. Der Start ist
+ * für den Nutzer völlig kosten- und risikofrei.
  * =====================================================================================
  */
 export function startQuiz(wissensbaustein) {
     if (window.user.hearts <= 0) {
-        ui.showNotification('Du hast keine Herzen mehr! ❤️');
+        ui.showNotification('Du hast keine Herzen mehr! ❤️ Lerne, um neue zu verdienen.');
         return;
     }
 
@@ -28,8 +25,6 @@ export function startQuiz(wissensbaustein) {
         console.error("Quiz-Start fehlgeschlagen: Keine Fragen in wissensbaustein.prüfen.source gefunden für", wissensbaustein);
         return;
     }
-    
-    // HERZABZUG HIER ENTFERNT
 
     window.activeQuiz = {
         wissensbausteinId: wissensbaustein.wissensbausteinId,
@@ -38,8 +33,7 @@ export function startQuiz(wissensbaustein) {
         currentQuestionIndex: 0,
         score: 0,
         userAnswers: [],
-        isReviewing: false,
-        heartSpent: false // NEU: Dieser Schalter steuert den Herzabzug
+        isReviewing: false
     };
     
     ui.openQuizModal();
@@ -76,33 +70,16 @@ export function selectAnswer(index) {
 
 /**
  * =====================================================================================
- * KORRIGIERTE FUNKTION: nextQuestion
+ * FUNKTION: nextQuestion (Version 3.0)
  * =====================================================================================
- * Behobene Probleme:
- * 1. Implementiert den verzögerten Herzabzug. Nur wenn die erste Frage beantwortet
- * wird und der Nutzer auf "Weiter" klickt, wird das Herz verbraucht.
+ * Logik: Herzabzug komplett entfernt. Die Funktion ist nur noch für die Navigation
+ * zwischen den Fragen zuständig.
  * =====================================================================================
  */
 export function nextQuestion() {
     if (window.activeQuiz.userAnswers[window.activeQuiz.currentQuestionIndex] === undefined && !window.activeQuiz.isReviewing) {
         ui.showNotification('Bitte wähle eine Antwort aus!');
         return;
-    }
-
-    // Erst wenn die erste Frage beantwortet und "weiter" geklickt wird, gilt das Herz als final verbraucht.
-    if (window.activeQuiz.currentQuestionIndex === 0 && !window.activeQuiz.isReviewing && !window.activeQuiz.heartSpent) {
-        if (window.user.hearts > 0) {
-            window.user.hearts--;
-            window.activeQuiz.heartSpent = true;
-            ui.showNotification("Quiz gestartet. -1 Herz ❤️");
-            ui.updateUI(window.user);
-            if (window.saveUser) window.saveUser();
-        } else {
-            // Sollte nicht passieren wegen der Prüfung in startQuiz, aber als Absicherung
-            ui.showNotification("Nicht genügend Herzen, um fortzufahren.");
-            closeQuiz();
-            return;
-        }
     }
 
     if (window.activeQuiz.currentQuestionIndex < window.activeQuiz.questions.length - 1) {
@@ -119,11 +96,12 @@ export function nextQuestion() {
 
 /**
  * =====================================================================================
- * KORRIGIERTE FUNKTION: endQuiz
+ * KORRIGIERTE FUNKTION: endQuiz (Version 3.0)
  * =====================================================================================
  * Behobene Probleme:
- * 1. Der Aufruf an `updateLernfortschritt` wurde korrigiert, sodass die verdienten
- * Sterne korrekt an den Lernlogik-Service übergeben und gespeichert werden können.
+ * 1. Implementiert die neue Logik: Ein Herz wird NUR DANN abgezogen, wenn das
+ * Quiz NICHT bestanden wurde (warErfolgreich === false).
+ * 2. Bei Bestehen gibt es Belohnungen, ohne Herzverlust.
  * =====================================================================================
  */
 export function endQuiz() {
@@ -133,19 +111,28 @@ export function endQuiz() {
     const warErfolgreich = percentage >= 50;
     
     let stars = 0, coins = 0, xp = 0;
-    if (percentage >= 90) { stars = 3; }
-    else if (percentage >= 70) { stars = 2; }
-    else if (percentage >= 50) { stars = 1; }
+
+    if (warErfolgreich) {
+        // Belohnungen bei Erfolg
+        if (percentage >= 90) { stars = 3; }
+        else if (percentage >= 70) { stars = 2; }
+        else if (percentage >= 50) { stars = 1; }
+        
+        coins = 5 + Math.floor(percentage / 10) * 5;
+        xp = 10 + Math.floor(percentage / 10) * 7;
+
+        window.user.coins += coins;
+        window.user.xp += xp;
+
+    } else {
+        // Bestrafung bei Misserfolg
+        if (window.user.hearts > 0) {
+            window.user.hearts--;
+            ui.showNotification("Quiz nicht bestanden. -1 Herz ❤️");
+        }
+    }
     
-    // Belohnungen werden immer vergeben
-    coins = 5 + Math.floor(percentage / 10) * 5; // 5-55 Münzen
-    xp = 10 + Math.floor(percentage / 10) * 7;  // 10-80 XP
-
-    // KORRIGIERTER AUFRUF: Übergibt jetzt die Sterne
     LernlogikService.updateLernfortschritt(window.user, window.activeQuiz.wissensbausteinId, warErfolgreich, stars);
-
-    window.user.coins += coins;
-    window.user.xp += xp;
     
     ui.closeQuizModal();
     ui.showResultsModal({ score: score, total: totalQuestions, stars, coins, xp });
@@ -162,19 +149,7 @@ export function reviewAnswers() {
     ui.displayQuestion();
 }
 
-/**
- * =====================================================================================
- * KORRIGIERTE FUNKTION: closeQuiz
- * =====================================================================================
- * Behobene Probleme:
- * 1. Die Logik zur Herz-Rückerstattung wurde entfernt. Da das Herz erst in `nextQuestion`
- * abgezogen wird, ist eine Rückerstattung nicht mehr nötig. Das vereinfacht den Code.
- * =====================================================================================
- */
 export function closeQuiz() {
-    // Die Logik zur Herz-Rückerstattung ist nicht mehr notwendig,
-    // da das Herz erst bei Bestätigung der ersten Frage abgezogen wird.
-    // Ein einfacher Abbruch verbraucht somit kein Herz mehr.
     ui.closeQuizModal();
 }
 
