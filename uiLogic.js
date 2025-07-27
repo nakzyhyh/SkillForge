@@ -1,112 +1,194 @@
 'use strict';
 
-import * as quiz from './quizLogic.js';
 import * as LernlogikService from './services/lernlogik.service.js';
-import * as ZusatzModuleLogic from './zusatzModuleLogic.js';
+import * as ui from './uiLogic.js';
 
-let currentLernBaustein = null;
-let currentZusatzModul = null;
+window.activeQuiz = {};
 
-let debuggerState = { callIndex: 0, stepIndex: 0 };
+/**
+ * =====================================================================================
+ * KORRIGIERTE FUNKTION: startQuiz
+ * =====================================================================================
+ * Behobene Probleme:
+ * 1. Der sofortige Herzabzug wurde entfernt. Das Herz wird jetzt erst bei Bestätigung
+ * der ersten Frage in `nextQuestion` abgezogen.
+ * 2. Die Benachrichtigung über den Herzverlust wurde ebenfalls nach `nextQuestion`
+ * verschoben, um den Nutzer nur dann zu informieren, wenn die Aktion irreversibel ist.
+ * =====================================================================================
+ */
+export function startQuiz(wissensbaustein) {
+    if (window.user.hearts <= 0) {
+        ui.showNotification('Du hast keine Herzen mehr! ❤️');
+        return;
+    }
 
-function addModuleStyles() { if (document.getElementById('interactive-module-styles')) return; const style = document.createElement('style'); style.id = 'interactive-module-styles'; style.innerHTML = ` .scenario-box { background-color: #f8f9ff; border-left: 5px solid #667eea; padding: 15px; margin-bottom: 20px; border-radius: 0 8px 8px 0; line-height: 1.6; } .scenario-box h4 { margin-top: 0; color: #667eea; } .justification-group { margin-top: 25px; } .justification-group label { font-weight: 600; display: block; margin-bottom: 8px; } .justification-group textarea { width: 100%; min-height: 100px; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; line-height: 1.5; resize: vertical; } .choice-options { display: flex; flex-direction: column; gap: 12px; } .choice-option { padding: 15px; border: 2px solid #e0e0e0; border-radius: 15px; cursor: pointer; transition: all 0.2s ease; } .choice-option:hover { border-color: #667eea; background: #f8f9ff; } .choice-option.selected { border-color: #667eea; background-color: #e9eafc; } .debugger-container { display: flex; flex-direction: column; gap: 15px; } .debugger-code { background-color: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; font-family: monospace; } .debugger-code .line-highlight { background-color: rgba(255, 255, 10, 0.2); display: block; } .debugger-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; } .debugger-controls select { padding: 8px; border-radius: 8px; flex-grow: 1; border: 1px solid #ccc; } .debugger-log { min-height: 50px; background-color: #f1f3f5; padding: 10px; border-radius: 8px; font-family: monospace; } .debugger-final-check { margin-top: 15px; } .readonly-field { background-color: #f0f0f0; color: #555; pointer-events: none; } `; document.head.appendChild(style); }
-function buildScenarioChoiceUI(container, modul) { const optionsHtml = modul.options.map((option, index) => `<div class="choice-option" data-index="${index}">${option}</div>`).join(''); let justificationHtml = ''; if (modul.justificationPrompt) { justificationHtml = ` <div class="justification-group" id="justificationGroup" style="display: none;"> <label for="justificationText">${modul.justificationPrompt}</label> <textarea id="justificationText" placeholder="Deine Begründung hier..."></textarea> </div>`; } container.innerHTML = ` <div class="scenario-box"><h4>Szenario</h4><p>${modul.scenario}</p></div> <p class="modul-beschreibung"><strong>${modul.question || ''}</strong></p> <div class="choice-options" id="choiceOptions">${optionsHtml}</div> ${justificationHtml} <div id="interactive_feedback" class="feedback-box" style="display:none;"></div> <button id="checkInteractiveBtn" class="quiz-btn primary" style="width:100%; margin-top:20px;">Auswahl bestätigen</button> `; const optionsContainer = container.querySelector('#choiceOptions'); optionsContainer.addEventListener('click', (e) => { if (e.target.classList.contains('choice-option')) { const currentSelected = optionsContainer.querySelector('.selected'); if (currentSelected) currentSelected.classList.remove('selected'); e.target.classList.add('selected'); const justificationGroup = container.querySelector('#justificationGroup'); if (justificationGroup) justificationGroup.style.display = 'block'; } }); }
-function buildInteractiveCalculationUI(container, modul) { const inputsHtml = modul.inputs.map(input => ` <div class="calc-row"> <label for="calc_${input.id}">${input.label}:</label> <input type="number" id="calc_${input.id}" value="${input.value || ''}" placeholder="${input.placeholder || ''}" ${input.readonly ? 'readonly' : ''} class="${input.readonly ? 'readonly-field' : ''}"> </div> `).join(''); let finalSolutionHtml = ''; if (modul.final_solution !== undefined) { finalSolutionHtml = `<hr><div class="calc-row"><label for="calc_final_solution"><strong>Gesamtkosten (€):</strong></label><input type="number" id="calc_final_solution" placeholder="Endergebnis eintragen"></div>`; } container.innerHTML = ` <div class="scenario-box"><h4>Fallstudie</h4><p>${modul.context_story}</p></div> <p class="modul-beschreibung"><strong>Aufgabe:</strong> Tragen Sie die fehlenden Werte ein und berechnen Sie das Endergebnis.</p> <div class="calculation-form">${inputsHtml}${finalSolutionHtml}</div> <div id="interactive_calc_feedback" class="feedback-box" style="display:none;"></div> <button id="checkInteractiveCalcBtn" class="quiz-btn primary" style="width:100%; margin-top:20px;">Berechnung prüfen</button> `; }
-function buildCodeTraceResultUI(container, modul) { const resultsHtml = modul.results.map(res => ` <div class="code-result-row"> <label for="res_${res.id}">${res.label}:</label> <input type="${res.type}" id="res_${res.id}" placeholder="Ergebnis für '${res.id}'"> </div> `).join(''); container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> <pre class="debugger-code">${modul.code_snippet}</pre> <div class="scenario-box"><h4>Funktionsaufruf</h4><code>${modul.call}</code></div> <div class="code-result-form">${resultsHtml}</div> <div id="code_trace_feedback" class="feedback-box" style="display:none;"></div> <button id="checkCodeTraceBtn" class="quiz-btn primary" style="width:100%; margin-top:20px;">Ergebnisse prüfen</button> `; }
-function buildSimulatedDebuggerUI(container, modul) { debuggerState = { callIndex: 0, stepIndex: 0 }; const callOptions = modul.trace.map((t, i) => `<option value="${i}">${t.call}</option>`).join(''); container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> <pre class="debugger-code" id="debuggerCode">${modul.code_snippet}</pre> <div class="debugger-controls"> <select id="debuggerCallSelector">${callOptions}</select> <button id="nextDebugStepBtn" class="quiz-btn secondary">Nächster Schritt</button> </div> <div class="debugger-log" id="debuggerLog">Starten Sie die Simulation mit "Nächster Schritt".</div> <div class="debugger-final-check" id="debuggerFinalCheck" style="display:none;"> <p>Die Simulation ist beendet. Was ist der finale Rückgabewert?</p> <input type="text" id="debuggerSolutionInput" placeholder="Finale Ausgabe hier eingeben..." style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;"> <button id="checkDebuggerSolutionBtn" class="quiz-btn primary" style="width:100%; margin-top:10px;">Lösung prüfen</button> </div> <div id="debugger_feedback" class="feedback-box" style="display:none;"></div> `; container.querySelector('#debuggerCallSelector').addEventListener('change', (e) => { debuggerState.callIndex = parseInt(e.target.value, 10); debuggerState.stepIndex = 0; document.getElementById('debuggerLog').textContent = 'Simulation für neuen Aufruf zurückgesetzt. Starten mit "Nächster Schritt".'; document.getElementById('debuggerFinalCheck').style.display = 'none'; const nextButton = document.getElementById('nextDebugStepBtn'); if (nextButton) nextButton.disabled = false; }); }
-export function updateDebuggerView() { const modul = getCurrentZusatzModul(); if (!modul || modul.typ !== 'simulated_debugger') return; const trace = modul.trace[debuggerState.callIndex]; if (debuggerState.stepIndex < trace.steps.length) { const currentStep = trace.steps[debuggerState.stepIndex]; document.getElementById('debuggerLog').textContent = `Zeile ${currentStep.line}: ${currentStep.log}`; debuggerState.stepIndex++; } else { document.getElementById('debuggerLog').textContent = `Simulation beendet. Der finale Rückgabewert lautet: ${trace.solution}`; const nextButton = document.getElementById('nextDebugStepBtn'); if (nextButton) nextButton.disabled = true; const finalCheck = document.getElementById('debuggerFinalCheck'); if (finalCheck) finalCheck.style.display = 'block'; } }
-export function openLernModal(baustein) { currentLernBaustein = baustein; document.getElementById('lernModal').classList.add('active'); document.getElementById('lernModalTitle').textContent = baustein.titel; document.getElementById('lernenBeschreibung').textContent = baustein.lernen.beschreibung; document.getElementById('anwendenAnleitung').textContent = baustein.anwenden.anleitung; const simulationInputContainer = document.getElementById('simulationInput'); simulationInputContainer.innerHTML = ''; document.getElementById('simulationOutput').textContent = 'Das Ergebnis der Simulation wird hier erscheinen.'; const id = baustein.wissensbausteinId; if (id === 'LF1_betriebsstrukturen') { simulationInputContainer.innerHTML = ` <label for="sim_typ">Organisationstyp:</label> <select id="sim_typ"><option>Linienorganisation</option><option>Stabsorganisation</option><option>Matrixorganisation</option></select> <div id="matrix_fields" style="display: none;"><label for="sim_projekte">Anzahl Projekte:</label><input type="number" id="sim_projekte" value="3" min="1"><label for="sim_abteilungen">Anzahl Abteilungen:</label><input type="number" id="sim_abteilungen" value="5" min="1"></div> <label for="sim_ebenen">Hierarchie-Ebenen (für Linien/Stab):</label><input type="number" id="sim_ebenen" value="4" min="1"> `; const simTypSelect = document.getElementById('sim_typ'); const matrixFieldsDiv = document.getElementById('matrix_fields'); const ebenenInput = document.getElementById('sim_ebenen'); const ebenenLabel = document.querySelector('label[for="sim_ebenen"]'); function toggleMatrixFields() { if (simTypSelect.value === 'Matrixorganisation') { matrixFieldsDiv.style.display = 'block'; ebenenInput.style.display = 'none'; ebenenLabel.style.display = 'none'; } else { matrixFieldsDiv.style.display = 'none'; ebenenInput.style.display = 'block'; ebenenLabel.style.display = 'block'; } } simTypSelect.addEventListener('change', toggleMatrixFields); toggleMatrixFields(); } showLernTab('lernenTab'); }
-export function closeLernModal() { document.getElementById('lernModal').classList.remove('active'); currentLernBaustein = null; }
-export function openZusatzModul(modul) { if (!modul) { console.error("Fehler: Zusatzmodul-Daten fehlen beim Öffnen des Modals.", modul); return; } currentZusatzModul = modul; document.getElementById('zusatzModulTitle').textContent = modul.titel; const contentContainer = document.getElementById('zusatzModulContent'); contentContainer.innerHTML = ''; addModuleStyles(); switch (modul.typ) { case 'scenario_choice_justified': buildScenarioChoiceUI(contentContainer, modul); break; case 'scenario_form_filler': buildFormFillerUI(contentContainer, modul); break; case 'interactive_calculation': buildInteractiveCalculationUI(contentContainer, modul); break; case 'weighted_decision_matrix': buildDecisionMatrixUI(contentContainer, modul); break; case 'code_trace_result': buildCodeTraceResultUI(contentContainer, modul); break; case 'simulated_debugger': buildSimulatedDebuggerUI(contentContainer, modul); break; case 'subnet_calculator': buildSubnetCalculatorUI(contentContainer, modul); break; case 'contextual_input': buildContextualInputUI(contentContainer, modul); break; case 'netzplan': buildNetzplanUI(contentContainer, modul); break; default: contentContainer.innerHTML = `<p class="feedback-box incorrect">Modul-Typ "${modul.typ}" ist unbekannt.</p>`; } document.getElementById('zusatzModulModal').classList.add('active'); }
-export function closeZusatzModulModal() { document.getElementById('zusatzModulModal').classList.remove('active'); currentZusatzModul = null; }
-export function renderZusatzModule(user, zusatzModuleData) { const container = document.getElementById('pruefungPlusScreen'); if (!container) return; container.innerHTML = `<div class="wiederholungs-header">Prüfung+ Module</div><p class="wiederholungs-subheader">Trainiere spezielle, prüfungsrelevante Fähigkeiten mit interaktiven Übungen.</p>`; if (!zusatzModuleData || zusatzModuleData.length === 0) { container.innerHTML += `<p class="feedback-box incorrect">Fehler: Die Zusatzmodul-Daten konnten nicht geladen werden.</p>`; return; } const grid = document.createElement('div'); grid.className = 'pruefung-plus-grid'; zusatzModuleData.forEach(modul => { const card = document.createElement('div'); card.className = 'zusatz-modul-card'; if (modul.typ === 'coming_soon') { card.classList.add('locked'); card.style.cursor = 'not-allowed'; } else { card.addEventListener('click', () => openZusatzModul(modul)); } const icons = { 'scenario_choice_justified': '🤔', 'interactive_calculation': '✍️', 'weighted_decision_matrix': '⚖️', 'simulated_debugger': '🐞', 'code_trace_result': '💻', 'scenario_form_filler': '📋', 'contextual_input': '🖼️', 'netzplan': '📊', 'subnet_calculator': '🖧' }; const icon = icons[modul.typ] || '🔧'; card.innerHTML = `<div class="zusatz-modul-icon">${icon}</div><div class="zusatz-modul-details"><h3>${modul.titel}</h3><p>${modul.beschreibung}</p></div>`; grid.appendChild(card); }); container.appendChild(grid); }
-function buildContextualInputUI(container, modul) { let fieldsHtml = modul.fields.map(field => ` <div class="form-filler-row"> <label for="form_${field.id}">${field.label}:</label> <input type="${field.type}" id="form_${field.id}" placeholder="${field.placeholder || ''}"> </div> `).join(''); let contextHtml = ` <div class="contextual-info"> ${modul.context.image_src ? `<img src="${modul.context.image_src}" alt="Kontextbild">` : ''} <ul class="contextual-instructions"> ${modul.context.instructions.map(instr => `<li>${instr}</li>`).join('')} </ul> </div> `; container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> <div class="form-filler-container"> ${contextHtml} ${fieldsHtml} </div> <div id="form_feedback" class="feedback-box" style="display:none"></div> <button id="checkContextualInputBtn" class="quiz-btn primary" style="width:100%;margin-top:15px">Prüfen</button> `; }
-function buildFormFillerUI(container, modul) { let scenarioHtml = modul.scenario ? `<div class="scenario-box"><h4>Szenario</h4><p>${modul.scenario}</p></div>` : ''; let fieldsHtml = modul.fields.map(field => { if (field.type === 'radio') { let optionsHtml = field.options.map(opt => `<label class="radio-label"><input type="radio" name="${field.id}" value="${opt}"> <span>${opt}</span></label>`).join(''); return `<div class="form-filler-row radio-group"><label>${field.label}:</label>${optionsHtml}</div>`; } else { return `<div class="form-filler-row"><label for="form_${field.id}">${field.label}:</label><input type="${field.type}" id="form_${field.id}" placeholder="${field.placeholder || ''}"></div>`; } }).join(''); container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> ${scenarioHtml} <div class="form-filler-container">${fieldsHtml}</div> <div id="form_feedback" class="feedback-box" style="display:none"></div> <button id="checkFormFillerBtn" class="quiz-btn primary" style="width:100%;margin-top:15px">Prüfen</button>`;}
-function buildDecisionMatrixUI(container, modul) { if (!document.getElementById('decision-matrix-styles')) { const style = document.createElement('style'); style.id = 'decision-matrix-styles'; style.innerHTML = ` .decision-matrix { width: 100%; border-collapse: collapse; } .decision-matrix th, .decision-matrix td { border: 1px solid #ddd; padding: 8px; text-align: center; vertical-align: middle; } .decision-matrix th { background-color: #f2f2f2; } .matrix-cell-content { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; } .matrix-value { font-size: 0.9em; color: #555; } .matrix-cell-content select { padding: 4px; border-radius: 4px; border: 1px solid #ccc; } `; document.head.appendChild(style); } let head = '<tr><th>Kriterium</th>' + modul.devices.map(d => `<th>${d}</th>`).join('') + '</tr>'; let rows = ''; modul.criteria.forEach((crit, rIdx) => { rows += `<tr><td>${crit.label}</td>`; modul.devices.forEach((_, cIdx) => { const value = crit.values[cIdx]; rows += ` <td> <div class="matrix-cell-content"> <span class="matrix-value">${value}</span> <select data-row="${rIdx}" data-col="${cIdx}"> <option value="">Punkte</option> <option>1</option> <option>2</option> <option>3</option> </select> </div> </td>`; }); rows += '</tr>'; }); rows += '<tr><th>Summe</th>' + modul.devices.map((_, i) => `<th id="dm_sum_${i}">0</th>`).join('') + '</tr>'; container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> <div style="overflow-x:auto"><table class="decision-matrix">${head + rows}</table></div> <div id="dm_feedback" class="feedback-box" style="display:none"></div> <button id="dm_check_btn" class="quiz-btn primary" style="width:100%;margin-top:15px">Prüfen</button>`; container.querySelector('#dm_check_btn').addEventListener('click', ZusatzModuleLogic.checkDecisionMatrix); }
-function buildSubnetCalculatorUI(container, modul) { const aufgabeIndex = Math.floor(Math.random() * modul.aufgaben.length); const aufgabe = modul.aufgaben[aufgabeIndex]; container.innerHTML = ` <div id="subnet-aufgabe-container" data-aufgabe-index="${aufgabeIndex}"> <div class="subnet-aufgabe"><p>Gegebene IP-Adresse: <code>${aufgabe.ip}/${aufgabe.cidr}</code></p></div> <div class="subnet-form"> <label for="subnet_network">Netz-ID:</label><input type="text" id="subnet_network" placeholder="z.B. 192.168.178.64"> <label for="subnet_broadcast">Broadcast:</label><input type="text" id="subnet_broadcast" placeholder="z.B. 192.168.178.127"> <label for="subnet_first">Erster Host:</label><input type="text" id="subnet_first" placeholder="z.B. 192.168.178.65"> <label for="subnet_last">Letzter Host:</label><input type="text" id="subnet_last" placeholder="z.B. 192.168.178.126"> <label for="subnet_hosts">Anzahl Hosts:</label><input type="number" id="subnet_hosts" placeholder="z.B. 62"> </div> <div id="subnet-solution-feedback" class="feedback-box" style="display: none;"></div> <button id="checkSubnetBtn" class="quiz-btn primary" style="width: 100%; margin-top: 20px;">Prüfen</button> </div> `; }
-function buildNetzplanUI(container, modul) { if (!document.getElementById('netzplan-styles')) { const style = document.createElement('style'); style.id = 'netzplan-styles'; style.innerHTML = ` .netzplan-process-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 0.9em; } .netzplan-process-table th, .netzplan-process-table td { border: 1px solid #ddd; padding: 8px; text-align: left; } .netzplan-process-table th { background-color: #f2f2f2; font-weight: bold; } .netzplan-process-table tr:nth-child(even) { background-color: #f9f9f9; } .netzplan-wrapper { display: flex; flex-direction: column; align-items: center; gap: 45px; padding: 20px 10px; } .netzplan-node { display: grid; grid-template-areas: 'faz dauer fez' 'name gp fp' 'saz empty sez'; grid-template-columns: 1fr 1fr 1fr; border: 2px solid #333; border-radius: 4px; width: 220px; font-family: sans-serif; text-align: center; background-color: #fff; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); position: relative; } .netzplan-node:not(:last-child)::after { content: '↓'; position: absolute; bottom: -35px; left: 50%; transform: translateX(-50%); font-size: 28px; color: #888; } .node-cell { border: 1px solid #ccc; padding: 4px; display: flex; flex-direction: column; justify-content: center; align-items: center; } .node-cell .label { font-size: 0.7em; color: #666; } .node-cell .value { font-size: 1.2em; font-weight: bold; } .node-input { font-size: 1.2em; font-weight: bold; color: #003366; width: 95%; border: none; text-align: center; background-color: #f0f8ff; border-radius: 2px; } .node-input:read-only { background-color: transparent; color: #000; font-weight: normal; pointer-events: none; } .node-input.correct { background-color: #d4edda !important; } .node-input.incorrect { background-color: #f8d7da !important; } .faz { grid-area: faz; } .dauer { grid-area: dauer; } .fez { grid-area: fez; } .name { grid-area: name; } .gp { grid-area: gp; } .fp { grid-area: fp; } .saz { grid-area: saz; } .empty { grid-area: empty; } .sez { grid-area: sez; } `; document.head.appendChild(style); } let processTableHtml = ''; if (modul.processTable && modul.processTable.length > 0) { const tableHeaders = `<th>Vorgang</th><th>Beschreibung</th><th>Dauer</th><th>Vorgänger</th>`; const tableRows = modul.processTable.map(p => ` <tr> <td>${p.name}</td> <td>${p.description}</td> <td>${p.duration}</td> <td>${p.predecessors.join(', ') || 'Start'}</td> </tr> `).join(''); processTableHtml = ` <h4 style="margin-bottom: 10px;">Prozessübersicht</h4> <div style="overflow-x:auto;"> <table class="netzplan-process-table"> <thead><tr>${tableHeaders}</tr></thead> <tbody>${tableRows}</tbody> </table> </div> `; } const createNodeHtml = (node) => { const sol = modul.solution; const createInput = (id, placeholder = '?', readonly = false) => { const value = sol[id] !== undefined && readonly ? `value="${sol[id]}"` : ''; return `<input type="number" id="${id}" class="node-input" placeholder="${placeholder}" ${value} ${readonly ? 'readonly' : ''}>`; }; return ` <div class="netzplan-node"> <div class="node-cell faz"><span class="label">FAZ</span>${createInput(node.id + '_faz', '?', node.isStart)}</div> <div class="node-cell dauer"><span class="label">Dauer</span><span class="value">${node.duration}</span></div> <div class="node-cell fez"><span class="label">FEZ</span>${createInput(node.id + '_fez', '?', node.isStart)}</div> <div class="node-cell name"><span class="label">Vorgang</span><span class="value">${node.name}</span></div> <div class="node-cell gp"><span class="label">GP</span>${createInput(node.id + '_gp')}</div> <div class="node-cell fp"><span class="label">FP</span>${createInput(node.id + '_fp')}</div> <div class="node-cell saz"><span class="label">SAZ</span>${createInput(node.id + '_saz')}</div> <div class="node-cell empty"></div> <div class="node-cell sez"><span class="label">SEZ</span>${createInput(node.id + '_sez')}</div> </div>`; }; const nodesInOrder = ['A', 'B', 'C', 'D', 'G', 'E', 'H', 'F', 'I', 'J']; const nodesHtml = nodesInOrder.map(name => { const nodeData = modul.nodes.find(n => n.name === name); return createNodeHtml(nodeData); }).join(''); container.innerHTML = ` <p class="modul-beschreibung">${modul.beschreibung}</p> ${processTableHtml} <h4 style="margin-top: 20px; margin-bottom: 10px;">Vorgangsknotenplan</h4> <div class="netzplan-wrapper"> ${nodesHtml} </div> <div id="netzplan_feedback" class="feedback-box" style="display:none; margin-top: 15px;"></div> <button id="checkNetzplanBtn" class="quiz-btn primary" style="width:100%; margin-top:15px;">Netzplan prüfen</button> `; 
-    // container.querySelector('#checkNetzplanBtn').addEventListener('click', ZusatzModuleLogic.checkNetzplanAnswers); // FEHLERHAFTE ZEILE ENTFERNT
+    const quizContent = wissensbaustein.prüfen;
+    if (!quizContent || !quizContent.source || quizContent.source.length === 0) {
+        ui.showNotification(`Fehler: Keine Fragen für Thema "${wissensbaustein.titel}" gefunden!`);
+        console.error("Quiz-Start fehlgeschlagen: Keine Fragen in wissensbaustein.prüfen.source gefunden für", wissensbaustein);
+        return;
+    }
+    
+    // HERZABZUG HIER ENTFERNT
+
+    window.activeQuiz = {
+        wissensbausteinId: wissensbaustein.wissensbausteinId,
+        isBoss: wissensbaustein.titel.includes("Meilenstein-Prüfung"),
+        questions: shuffleArray([...quizContent.source]),
+        currentQuestionIndex: 0,
+        score: 0,
+        userAnswers: [],
+        isReviewing: false,
+        heartSpent: false // NEU: Dieser Schalter steuert den Herzabzug
+    };
+    
+    ui.openQuizModal();
+    ui.displayQuestion();
 }
-export function showSubnetSolution(allCorrect, correctAnswers) { const feedbackBox = document.getElementById('subnet-solution-feedback'); if (allCorrect) { feedbackBox.className = 'feedback-box correct'; feedbackBox.textContent = 'Perfekt! Alle Werte sind korrekt. ✅'; } else { feedbackBox.className = 'feedback-box incorrect'; let solution = 'Einige Werte sind falsch. Hier die korrekte Lösung:\n'; solution += `Netz: ${correctAnswers.networkId}, Broadcast: ${correctAnswers.broadcast}, Hosts: ${correctAnswers.firstHost} - ${correctAnswers.lastHost} (${correctAnswers.hostCount} Stk.)`; feedbackBox.textContent = solution; } feedbackBox.style.display = 'block'; }
-export function showLernTab(tabId) { document.querySelectorAll('.lern-tab').forEach(tab => tab.classList.remove('active')); document.getElementById(tabId).classList.add('active'); document.querySelectorAll('.lern-nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId)); }
-export function getCurrentLernBaustein() { return currentLernBaustein; }
-export function getCurrentZusatzModul() { return currentZusatzModul; }
-export function renderLearningPath(user) {
-    const pathContainer = document.getElementById('mapScreen');
-    if (!pathContainer) return;
-    pathContainer.innerHTML = '';
-    const worlds = window.wissensgraph.reduce((acc, baustein) => {
-        const lernfeldKey = baustein.lernfeld;
-        const lernfeldMeta = window.lernfelder.find(lf => lf.id === lernfeldKey) || { title: `Lernfeld ${lernfeldKey}`, icon: '📚', outcome: '' };
-        if (!acc[lernfeldKey]) acc[lernfeldKey] = { ...lernfeldMeta, quizzes: [] };
-        acc[lernfeldKey].quizzes.push(baustein);
-        return acc;
-    }, {});
-    let nextAvailableModuleFound = false;
-    for (const worldKey in worlds) {
-        const world = worlds[worldKey];
-        const worldDiv = document.createElement('div');
-        worldDiv.className = 'topic-world';
-        worldDiv.innerHTML = `<div class="topic-header"><div class="topic-icon">${world.icon}</div><div class="topic-title">${world.title}</div></div><p class="world-outcome">${world.outcome}</p>`;
-        const quizPathDiv = document.createElement('div');
-        quizPathDiv.className = 'quiz-path';
-        world.quizzes.forEach(baustein => {
-            const fortschritt = user.lernfortschritt.get(baustein.wissensbausteinId);
-            const isCompleted = fortschritt && (fortschritt.status === 'gelernt' || fortschritt.status === 'gemeistert');
-            const dependenciesMet = baustein.dependencies.every(depId => {
-                const depFortschritt = user.lernfortschritt.get(depId);
-                return depFortschritt && (depFortschritt.status === 'gelernt' || depFortschritt.status === 'gemeistert');
-            });
-            let status = 'locked';
-            if (isCompleted) { status = 'completed'; } 
-            else if (dependenciesMet && !nextAvailableModuleFound) { status = 'current'; nextAvailableModuleFound = true; }
-             else if (dependenciesMet) { status = 'unlocked_but_not_current'; }
 
-            let starsHtml = '';
-            if (isCompleted && fortschritt.stars > 0) {
-                starsHtml = `<div class="level-stars">${'⭐'.repeat(fortschritt.stars)}</div>`;
-            }
+export function selectAnswer(index) {
+    if (document.querySelector('.answer-option.selected, .answer-option.correct, .answer-option.incorrect')) {
+        return;
+    }
 
-            const nodeDiv = document.createElement('div');
-            nodeDiv.className = 'quiz-node';
-            if (status !== 'locked' && status !== 'unlocked_but_not_current') {
-                nodeDiv.addEventListener('click', () => openLernModal(baustein));
-            } else {
-                nodeDiv.style.cursor = 'not-allowed';
+    const question = window.activeQuiz.questions[window.activeQuiz.currentQuestionIndex];
+    window.activeQuiz.userAnswers[window.activeQuiz.currentQuestionIndex] = index;
+    const options = document.querySelectorAll('.answer-option');
+    options.forEach(opt => opt.style.pointerEvents = 'none'); 
+
+    const isCorrect = (index === question.answer);
+    const correctAnswerText = question.choices[question.answer];
+
+    setTimeout(() => {
+        if (isCorrect) {
+            window.activeQuiz.score++;
+            options[index].classList.add('correct');
+        } else {
+            options[index].classList.add('incorrect');
+            if (options[question.answer]) {
+                options[question.answer].classList.add('correct');
             }
-            nodeDiv.innerHTML = `<div class="quiz-button level-${status}"><div class="quiz-icon">${status.startsWith('locked') ? '🔒' : '💡'}</div>${starsHtml}</div><div class="quiz-label">${baustein.titel}</div>`;
-            if (baustein.titel.includes("Meilenstein-Prüfung")) nodeDiv.querySelector('.quiz-icon').textContent = '👑';
-            quizPathDiv.appendChild(nodeDiv);
-        });
-        worldDiv.appendChild(quizPathDiv);
-        pathContainer.appendChild(worldDiv);
+        }
+        ui.updateQuizScore(window.activeQuiz.score);
+        ui.showExplanation(isCorrect, correctAnswerText);
+    }, 300);
+}
+
+/**
+ * =====================================================================================
+ * KORRIGIERTE FUNKTION: nextQuestion
+ * =====================================================================================
+ * Behobene Probleme:
+ * 1. Implementiert den verzögerten Herzabzug. Nur wenn die erste Frage beantwortet
+ * wird und der Nutzer auf "Weiter" klickt, wird das Herz verbraucht.
+ * =====================================================================================
+ */
+export function nextQuestion() {
+    if (window.activeQuiz.userAnswers[window.activeQuiz.currentQuestionIndex] === undefined && !window.activeQuiz.isReviewing) {
+        ui.showNotification('Bitte wähle eine Antwort aus!');
+        return;
+    }
+
+    // Erst wenn die erste Frage beantwortet und "weiter" geklickt wird, gilt das Herz als final verbraucht.
+    if (window.activeQuiz.currentQuestionIndex === 0 && !window.activeQuiz.isReviewing && !window.activeQuiz.heartSpent) {
+        if (window.user.hearts > 0) {
+            window.user.hearts--;
+            window.activeQuiz.heartSpent = true;
+            ui.showNotification("Quiz gestartet. -1 Herz ❤️");
+            ui.updateUI(window.user);
+            if (window.saveUser) window.saveUser();
+        } else {
+            // Sollte nicht passieren wegen der Prüfung in startQuiz, aber als Absicherung
+            ui.showNotification("Nicht genügend Herzen, um fortzufahren.");
+            closeQuiz();
+            return;
+        }
+    }
+
+    if (window.activeQuiz.currentQuestionIndex < window.activeQuiz.questions.length - 1) {
+        window.activeQuiz.currentQuestionIndex++;
+        ui.displayQuestion();
+    } else {
+        if (window.activeQuiz.isReviewing) {
+            ui.backToMap(window.user);
+        } else {
+            endQuiz();
+        }
     }
 }
-export function updateUI(user) { if (!user) return; document.getElementById('coinCount').textContent = user.coins; document.getElementById('heartCount').textContent = user.hearts; document.getElementById('gemCount').textContent = user.gems; const level = Math.floor((user.xp || 0) / 500) + 1; document.getElementById('userLevel').textContent = `Level ${level}`; const xpForNextLevel = 500 * level; const currentLevelBaseXP = 500 * (level - 1); const currentLevelXP = (user.xp || 0) - currentLevelBaseXP; const xpPercentage = (currentLevelXP / 500) * 100; document.getElementById('levelXpFill').style.width = `${xpPercentage}%`; }
-export function displayQuestion() { if (!window.activeQuiz || !window.activeQuiz.questions) return; const question = window.activeQuiz.questions[window.activeQuiz.currentQuestionIndex]; if (!question) { console.error("Keine Frage für den aktuellen Index gefunden:", window.activeQuiz); return; } document.getElementById('questionNumber').textContent = `Frage ${window.activeQuiz.currentQuestionIndex + 1} von ${window.activeQuiz.questions.length}`; document.getElementById('questionText').textContent = question.question; document.getElementById('progressFill').style.width = ((window.activeQuiz.currentQuestionIndex + 1) / window.activeQuiz.questions.length) * 100 + '%'; updateQuizScore(window.activeQuiz.score); renderMultipleChoiceQuestion(question); document.getElementById('explanationBox').classList.remove('show'); document.getElementById('prevBtn').style.display = window.activeQuiz.isReviewing ? 'block' : 'none'; document.getElementById('nextBtn').textContent = 'Weiter'; }
-export function renderMultipleChoiceQuestion(question) { const optionsContainer = document.getElementById('answerOptions'); optionsContainer.innerHTML = ''; if (!question || !question.choices) { console.error("Frage oder Antwortmöglichkeiten fehlen:", question); return; } question.choices.forEach((choiceText, index) => { const option = document.createElement('div'); option.className = 'answer-option'; option.textContent = choiceText; option.addEventListener('click', () => quiz.selectAnswer(index)); option.style.pointerEvents = 'auto'; if (window.activeQuiz.isReviewing && window.activeQuiz.userAnswers[window.activeQuiz.currentQuestionIndex] !== undefined) { option.style.pointerEvents = 'none'; if (index === question.answer) option.classList.add('correct'); else if (index === window.activeQuiz.userAnswers[window.activeQuiz.currentQuestionIndex]) option.classList.add('incorrect'); } optionsContainer.appendChild(option); }); }
-export function updateQuizScore(score) { document.getElementById('quizScore').textContent = score; }
-export function showExplanation(isCorrect, answerText) { const explanationBox = document.getElementById('explanationBox'); const explanationText = document.getElementById('explanationText'); const question = window.activeQuiz.questions[window.activeQuiz.currentQuestionIndex]; let explanationHtml; if (isCorrect) explanationHtml = `<strong style="color: #4CAF50;">Richtig! ✓</strong><br>${question.explanation || ''}`; else explanationHtml = `<strong style="color: #f44336;">Falsch ✗</strong><br>Die richtige Antwort wäre: <strong>${answerText}</strong>.<br><br>${question.explanation || ''}`; explanationText.innerHTML = explanationHtml.replace(/`([^`]+)`/g, '<code>$1</code>'); explanationBox.classList.add('show'); }
-export function showScreen(screenId) { document.querySelectorAll('.screen, .learning-path').forEach(s => s.classList.remove('active')); const screen = document.getElementById(screenId); if (screen) screen.classList.add('active'); document.querySelectorAll('.nav-item').forEach(item => { item.classList.toggle('active', item.dataset.screen === screenId); }); }
-export function openQuizModal() { document.getElementById('quizModal').classList.add('active'); }
-export function closeQuizModal() { document.getElementById('quizModal').classList.remove('active'); window.activeQuiz = {}; }
-export function showResultsModal(results) {
-    let emoji = '📚', title = 'Quiz beendet';
-    const percentage = (results.total > 0) ? (results.score / results.total) * 100 : 0;
-    if (percentage >= 90) { emoji = '🌟'; title = 'Perfekt!'; }
-    else if (percentage >= 70) { emoji = '😊'; title = 'Sehr gut!'; }
-    else if (percentage >= 50) { emoji = '💪'; title = 'Geschafft!'; }
-    else { emoji = '🤔'; title = 'Versuch es nochmal!'; }
-    document.getElementById('resultEmoji').textContent = emoji;
-    document.getElementById('resultTitle').textContent = title;
-    document.getElementById('finalScore').textContent = `${results.score}/${results.total}`;
-    document.getElementById('coinsEarned').textContent = `+${results.coins}`;
-    document.getElementById('starsEarned').textContent = `+${results.stars}`;
-    document.getElementById('xpEarned').textContent = `+${results.xp}`;
-    document.getElementById('resultsModal').classList.add('active');
+
+/**
+ * =====================================================================================
+ * KORRIGIERTE FUNKTION: endQuiz
+ * =====================================================================================
+ * Behobene Probleme:
+ * 1. Der Aufruf an `updateLernfortschritt` wurde korrigiert, sodass die verdienten
+ * Sterne korrekt an den Lernlogik-Service übergeben und gespeichert werden können.
+ * =====================================================================================
+ */
+export function endQuiz() {
+    const totalQuestions = window.activeQuiz.questions.length;
+    const score = window.activeQuiz.score;
+    const percentage = (totalQuestions > 0) ? (score / totalQuestions) * 100 : 0;
+    const warErfolgreich = percentage >= 50;
+    
+    let stars = 0, coins = 0, xp = 0;
+    if (percentage >= 90) { stars = 3; }
+    else if (percentage >= 70) { stars = 2; }
+    else if (percentage >= 50) { stars = 1; }
+    
+    // Belohnungen werden immer vergeben
+    coins = 5 + Math.floor(percentage / 10) * 5; // 5-55 Münzen
+    xp = 10 + Math.floor(percentage / 10) * 7;  // 10-80 XP
+
+    // KORRIGIERTER AUFRUF: Übergibt jetzt die Sterne
+    LernlogikService.updateLernfortschritt(window.user, window.activeQuiz.wissensbausteinId, warErfolgreich, stars);
+
+    window.user.coins += coins;
+    window.user.xp += xp;
+    
+    ui.closeQuizModal();
+    ui.showResultsModal({ score: score, total: totalQuestions, stars, coins, xp });
+    
+    if (window.saveUser) window.saveUser();
+    ui.updateUI(window.user);
 }
-export function closeResultsModal() { document.getElementById('resultsModal').classList.remove('active'); }
-export function backToMap(user) { closeResultsModal(); closeQuizModal(); renderLearningPath(user); showScreen('mapScreen'); }
-export function showNotification(message) { let existing = document.querySelector('.notification-popup'); if (existing) existing.remove(); const notification = document.createElement('div'); notification.className = 'notification-popup'; notification.textContent = message; document.body.appendChild(notification); setTimeout(() => { notification.style.animation = 'notificationSlideOut 0.3s forwards'; setTimeout(() => notification.remove(), 300); }, 3000); }
-export function renderProfile(user) { if (!user) return; const profileContainer = document.getElementById('profileScreen'); const level = Math.floor((user.xp || 0) / 500) + 1; const xpForNextLevel = 500 * level; const currentLevelBaseXP = 500 * (level - 1); const currentLevelXP = (user.xp || 0) - currentLevelBaseXP; const xpPercentage = (currentLevelXP / 500) * 100; profileContainer.innerHTML = ` <div class="profile-card"> <div class="profile-avatar-wrapper"> <img src="https://i.pravatar.cc/150?u=${user.email}" alt="User Avatar" class="profile-avatar"> </div> <div class="profile-name">${user.username}</div> <div class="profile-level">Level ${level}</div> <div class="xp-bar-container"> <div class="xp-label">XP: ${user.xp || 0} / ${xpForNextLevel}</div> <div class="xp-bar"> <div class="xp-bar-fill" style="width: ${xpPercentage}%;"></div> </div> </div> </div> <h3>Statistiken</h3> <p>Erledigte Bausteine: ${user.lernfortschritt.size}</p> <p>Edelsteine: ${user.gems || 0}</p> `; }
-export function renderShop() { const shopContainer = document.getElementById('shopScreen'); shopContainer.innerHTML = '<h2>Shop</h2>'; const shopGrid = document.createElement('div'); shopGrid.className = 'shop-grid'; (window.shopItems || []).forEach(item => { const itemDiv = document.createElement('div'); itemDiv.className = 'shop-item'; itemDiv.innerHTML = ` <div class="shop-item-image-wrapper"> <div style="font-size: 48px;">${item.priceCoins > 200 ? '🖼️' : '⚡️'}</div> </div> <div class="shop-item-name">${item.name}</div> <div class="shop-item-desc">${item.description}</div> <button class="shop-item-buy-button"> <span class="coin-icon">🪙</span> ${item.priceCoins} </button> `; shopGrid.appendChild(itemDiv); }); shopContainer.appendChild(shopGrid); }
+
+export function reviewAnswers() {
+    window.activeQuiz.isReviewing = true;
+    window.activeQuiz.currentQuestionIndex = 0;
+    ui.closeResultsModal();
+    ui.openQuizModal();
+    ui.displayQuestion();
+}
+
+/**
+ * =====================================================================================
+ * KORRIGIERTE FUNKTION: closeQuiz
+ * =====================================================================================
+ * Behobene Probleme:
+ * 1. Die Logik zur Herz-Rückerstattung wurde entfernt. Da das Herz erst in `nextQuestion`
+ * abgezogen wird, ist eine Rückerstattung nicht mehr nötig. Das vereinfacht den Code.
+ * =====================================================================================
+ */
+export function closeQuiz() {
+    // Die Logik zur Herz-Rückerstattung ist nicht mehr notwendig,
+    // da das Herz erst bei Bestätigung der ersten Frage abgezogen wird.
+    // Ein einfacher Abbruch verbraucht somit kein Herz mehr.
+    ui.closeQuizModal();
+}
+
+export function previousQuestion() {
+    if (window.activeQuiz.isReviewing && window.activeQuiz.currentQuestionIndex > 0) {
+        window.activeQuiz.currentQuestionIndex--;
+        ui.displayQuestion();
+    }
+}
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
